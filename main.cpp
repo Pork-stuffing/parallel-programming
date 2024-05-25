@@ -1,247 +1,429 @@
+#include <omp.h>
 #include <iostream>
-#include<emmintrin.h>
-#include<time.h>
-#include<Windows.h>
-#include<math.h>
-#include <immintrin.h>
+#include <windows.h>
 using namespace std;
 
-const int N = 2000;
-float elm[N][N]={0};
+const int n = 1000;
+float arr[n][n];
+float A[n][n];
+const int NUM_THREADS = 7; //工作线程数量
 
-void reset(float **test)
+
+void init()
 {
-    for(int i=0;i<N;i++)
-    {
-        for(int j = 0;j<N;j++)
-        {
-            test[i][j]=elm[i][j];
-        }
-    }
-    return;
+	for (int i = 0; i < n; i++)
+	{
+		for (int j = 0; j < n; j++)
+		{
+			arr[i][j] = 0;
+		}
+		arr[i][i] = 1.0;
+		for (int j = i + 1; j < n; j++)
+			arr[i][j] = rand() % 100;
+	}
+
+	for (int i = 0; i < n; i++)
+	{
+		int k1 = rand() % n;
+		int k2 = rand() % n;
+		for (int j = 0; j < n; j++)
+		{
+			arr[i][j] += arr[0][j];
+			arr[k1][j] += arr[k2][j];
+		}
+	}
 }
 
-//平凡算法
-void simple(float **e)
+
+void ReStart()
 {
-    for(int k=0;k<N;k++)
+    for(int i=0;i<n;i++)
     {
-        for(int j=k;j<N;j++)
-        {
-            e[k][j]/=e[k][k];
-        }
-        for(int i = k+1;i<N;i++)
-        {
-            for(int j = k+1;j<N;j++)
+        for(int j=0;j<n;j++)
+            A[i][j]=arr[i][j];
+    }
+}
+
+
+void f_ordinary()
+{
+	for (int k = 0; k < n; k++)
+	{
+		for (int j = k + 1; j < n; j++)
+		{
+			A[k][j] = A[k][j] * 1.0 / A[k][k];
+		}
+		A[k][k] = 1.0;
+
+		for (int i = k + 1; i < n; i++)
+		{
+			for (int j = k + 1; j < n; j++)
+			{
+				A[i][j] = A[i][j] - A[i][k] * A[k][j];
+			}
+			A[i][k] = 0;
+		}
+	}
+}
+
+void f_omp_static()
+{
+	 #pragma omp parallel num_threads(NUM_THREADS)
+
+	for (int k = 0; k < n; k++)
+	{
+		//串行部分
+		#pragma omp single
+		{
+			float tmp = A[k][k];
+			for (int j = k + 1; j < n; j++)
+			{
+				A[k][j] = A[k][j] / tmp;
+			}
+			A[k][k] = 1.0;
+		}
+
+		//并行部分
+		#pragma omp for schedule(static)
+		for (int i = k + 1; i < n; i++)
+		{
+			float tmp = A[i][k];
+			for (int j = k + 1; j < n; j++)
+				A[i][j] = A[i][j] - tmp * A[k][j];
+			A[i][k] = 0;
+		}
+		// 离开for循环时，各个线程默认同步，进入下一行的处理
+	}
+}
+
+
+void f_omp_dynamic()
+{
+	 #pragma omp parallel num_threads(NUM_THREADS)
+
+	for (int k = 0; k < n; k++)
+	{
+		//串行部分
+		#pragma omp single
+		{
+			float tmp = A[k][k];
+			for (int j = k + 1; j < n; j++)
+			{
+				A[k][j] = A[k][j] / tmp;
+			}
+			A[k][k] = 1.0;
+		}
+
+		//并行部分
+		#pragma omp for schedule(dynamic, 80)
+		for (int i = k + 1; i < n; i++)
+		{
+			float tmp = A[i][k];
+			for (int j = k + 1; j < n; j++)
+				A[i][j] = A[i][j] - tmp * A[k][j];
+			A[i][k] = 0;
+		}
+		// 离开for循环时，各个线程默认同步，进入下一行的处理
+	}
+}
+
+
+
+void f_omp_guided()
+{
+	 #pragma omp parallel num_threads(NUM_THREADS)
+
+	for (int k = 0; k < n; k++)
+	{
+		//串行部分
+		#pragma omp single
+		{
+			float tmp = A[k][k];
+			for (int j = k + 1; j < n; j++)
+			{
+				A[k][j] = A[k][j] / tmp;
+			}
+			A[k][k] = 1.0;
+		}
+
+		//并行部分
+		#pragma omp for schedule(guided, 80)
+		for (int i = k + 1; i < n; i++)
+		{
+			float tmp = A[i][k];
+			for (int j = k + 1; j < n; j++)
+				A[i][j] = A[i][j] - tmp * A[k][j];
+			A[i][k] = 0;
+		}
+		// 离开for循环时，各个线程默认同步，进入下一行的处理
+	}
+}
+
+
+
+
+
+
+
+
+
+
+/*
+
+void f_omp_static_neon()
+{
+    float32x4_t va = vmovq_n_f32(0);
+    float32x4_t vx = vmovq_n_f32(0);
+    float32x4_t vaij = vmovq_n_f32(0);
+    float32x4_t vaik = vmovq_n_f32(0);
+    float32x4_t vakj = vmovq_n_f32(0);
+
+    #pragma omp parallel num_threads(NUM_THREADS), private(va, vx, vaij, vaik,vakj)
+	for (int k = 0; k < n; k++)
+	{
+		//串行部分
+		#pragma omp single
+		{
+		    float32x4_t vt=vmovq_n_f32(A[k][k]);
+            int j;
+			for (j = k + 1; j < n; j++)
+			{
+				va=vld1q_f32(&(A[k][j]) );
+                va= vdivq_f32(va,vt);
+                vst1q_f32(&(A[k][j]), va);
+			}
+			for(; j<n; j++)
             {
-                e[i][j] = e[i][j] - e[i][k]*e[k][j];
-            }
-            e[i][k]=0;
-        }
-    }
-    return;
-}
+                A[k][j]=A[k][j]*1.0 / A[k][k];
 
-//SSE算法
-void sse_gausseliminate(float** A)//对齐
-{
-    __m128 t1, t2, t3;//四位单精度构成的向量
-    for (int k = 0; k < N; k++)
-    {
-        int preprocessnumber = (N - k - 1) % 4;//预处理的数量,能被四整除
-        int begin = k + 1 + preprocessnumber;
-        __attribute__((aligned(16)))float head[4] = { A[k][k],A[k][k],A[k][k],A[k][k] };
-        t2 = _mm_load_ps(head);
-        for (int j = k + 1; j < k + 1 + preprocessnumber; j++)
-        {
-            A[k][j] = A[k][j] / A[k][k];
-        }
-        for (int j = begin; j < N; j += 4)
-        {
-            t1 = _mm_load_ps(A[k] + j);
-            t1 = _mm_div_ps(t1, t2);
-            _mm_store_ss(A[k] + j, t1);
-        }
-        A[k][k] = 1;
-        t1 = _mm_setzero_ps();//清零
-        t2 = _mm_setzero_ps();
-        //先去头，为了四个四个的处理
-        for (int i = k + 1; i < N; i++)
-        {
-            for (int j = k + 1; j < k + 1 + preprocessnumber; j++)
+            }
+            A[k][k] = 1.0;
+		}
+
+		//并行部分
+		#pragma omp for schedule(static)
+		for (int i = k + 1; i < n; i++)
+		{
+		    vaik=vmovq_n_f32(A[i][k]);
+            int j;
+			for (j = k + 1; j+4 <= n; j+=4)
+			{
+				vakj=vld1q_f32(&(A[k][j]));
+				vaij=vld1q_f32(&(A[i][j]));
+				vx=vmulq_f32(vakj,vaik);
+				vaij=vsubq_f32(vaij,vx);
+
+				vst1q_f32(&A[i][j], vaij);
+			}
+
+			for(; j<n; j++)
             {
                 A[i][j] = A[i][j] - A[i][k] * A[k][j];
             }
-            A[i][k] = 0;
-        }
-        for (int i = k + 1; i < N; i++)
-        {
-            __attribute__((aligned(16)))float head1[4] = { A[i][k],A[i][k],A[i][k],A[i][k] };
-            t3 = _mm_load_ps(head1);
-            for (int j = begin; j < N; j += 4)
-            {
-                t1 = _mm_load_ps(A[k] + j);
-                t2 = _mm_load_ps(A[i] + j);
-                t1 = _mm_mul_ps(t1, t3);
-                t2 = _mm_sub_ps(t2, t1);
-                _mm_store_ss(A[i] + j, t2);
-            }
-            A[i][k] = 0;
-        }
-    }
+
+			A[i][k] = 0;
+		}
+		// 离开for循环时，各个线程默认同步，进入下一行的处理
+	}
 }
 
-//不对齐的SSE算法
-void SIMD_notaligned_SSE_gausseliminate(float** A)
+
+
+
+
+void f_omp_dynamic_neon()
 {
-    __m128 t1, t2, t3;//四位单精度构成的向量
-    for (int k = 0; k < N; k++)
-    {
-        int preprocessnumber = (N - k - 1) % 4;//预处理的数量,能被四整除
-        int begin = k + 1 + preprocessnumber;
-        float head[4] = { A[k][k],A[k][k],A[k][k],A[k][k] };
-        t2 = _mm_loadu_ps(head);
-        for (int j = k + 1; j < k + 1 + preprocessnumber; j++)
-        {
-            A[k][j] = A[k][j] / A[k][k];
-        }
-        for (int j = begin; j < N; j += 4)
-        {
-            t1 = _mm_loadu_ps(A[k] + j);
-            t1 = _mm_div_ps(t1, t2);
-            _mm_store_ss(A[k] + j, t1);
-        }
-        A[k][k] = 1;
-        t1 = _mm_setzero_ps();//清零
-        t2 = _mm_setzero_ps();
-        //先去头，为了四个四个的处理
-        for (int i = k + 1; i < N; i++)
-        {
-            for (int j = k + 1; j < k + 1 + preprocessnumber; j++)
+    float32x4_t va = vmovq_n_f32(0);
+    float32x4_t vx = vmovq_n_f32(0);
+    float32x4_t vaij = vmovq_n_f32(0);
+    float32x4_t vaik = vmovq_n_f32(0);
+    float32x4_t vakj = vmovq_n_f32(0);
+
+    #pragma omp parallel num_threads(NUM_THREADS), private(va, vx, vaij, vaik,vakj)
+	for (int k = 0; k < n; k++)
+	{
+		//串行部分
+		#pragma omp single
+		{
+		    float32x4_t vt=vmovq_n_f32(A[k][k]);
+            int j;
+			for (j = k + 1; j < n; j++)
+			{
+				va=vld1q_f32(&(A[k][j]) );
+                va= vdivq_f32(va,vt);
+                vst1q_f32(&(A[k][j]), va);
+			}
+			for(; j<n; j++)
+            {
+                A[k][j]=A[k][j]*1.0 / A[k][k];
+
+            }
+            A[k][k] = 1.0;
+		}
+
+		//并行部分
+		#pragma omp for schedule(dynamic, 5)
+		for (int i = k + 1; i < n; i++)
+		{
+		    vaik=vmovq_n_f32(A[i][k]);
+            int j;
+			for (j = k + 1; j+4 <= n; j+=4)
+			{
+				vakj=vld1q_f32(&(A[k][j]));
+				vaij=vld1q_f32(&(A[i][j]));
+				vx=vmulq_f32(vakj,vaik);
+				vaij=vsubq_f32(vaij,vx);
+
+				vst1q_f32(&A[i][j], vaij);
+			}
+
+			for(; j<n; j++)
             {
                 A[i][j] = A[i][j] - A[i][k] * A[k][j];
             }
-            A[i][k] = 0;
-        }
-        for (int i = k + 1; i < N; i++)
-        {
-            float head1[4] = { A[i][k],A[i][k],A[i][k],A[i][k] };
-            t3 = _mm_loadu_ps(head1);
-            for (int j = begin; j < N; j += 4)
-            {
-                t1 = _mm_loadu_ps(A[k] + j);
-                t2 = _mm_loadu_ps(A[i] + j);
-                t1 = _mm_mul_ps(t1, t3);
-                t2 = _mm_sub_ps(t2, t1);
-                _mm_store_ss(A[i] + j, t2);
-            }
-            A[i][k] = 0;
-        }
-    }
+
+			A[i][k] = 0;
+		}
+		// 离开for循环时，各个线程默认同步，进入下一行的处理
+	}
 }
 
-//AVX算法
-void avx_gauss(float** e)
+
+
+void f_omp_guided_neon()
 {
-    __m256 t1, t2, t3;
-    for (int k = 0; k < N; k++)
-    {
-        float temp1[8] = { e[k][k], e[k][k], e[k][k], e[k][k], e[k][k], e[k][k], e[k][k], e[k][k] };
-        t1 = _mm256_loadu_ps(temp1);
-        int j = k + 1;
-        for (j; j < N - 7; j += 8)
-        {
-            t2 = _mm256_loadu_ps(e[k] + j);
-            t3 = _mm256_div_ps(t2, t1);
-            _mm256_storeu_ps(e[k] + j, t3);
-        }
-        for (j; j < N; j++)
-            e[k][j] = e[k][j] / e[k][k];
+    float32x4_t va = vmovq_n_f32(0);
+    float32x4_t vx = vmovq_n_f32(0);
+    float32x4_t vaij = vmovq_n_f32(0);
+    float32x4_t vaik = vmovq_n_f32(0);
+    float32x4_t vakj = vmovq_n_f32(0);
 
-        e[k][k] = 1.0;
-
-        for (int i = k + 1; i < N; i++)
-        {
-            float temp2[8] = { e[i][k], e[i][k], e[i][k], e[i][k], e[i][k], e[i][k], e[i][k], e[i][k] };
-            t1 = _mm256_loadu_ps(temp2);
-            j = k + 1;
-            for (j; j < N - 7; j += 8)
+    #pragma omp parallel num_threads(NUM_THREADS), private(va, vx, vaij, vaik,vakj)
+	for (int k = 0; k < n; k++)
+	{
+		//串行部分
+		#pragma omp single
+		{
+		    float32x4_t vt=vmovq_n_f32(A[k][k]);
+            int j;
+			for (j = k + 1; j < n; j++)
+			{
+				va=vld1q_f32(&(A[k][j]) );
+                va= vdivq_f32(va,vt);
+                vst1q_f32(&(A[k][j]), va);
+			}
+			for(; j<n; j++)
             {
-                t2 = _mm256_loadu_ps(e[i] + j);
-                t3 = _mm256_loadu_ps(e[k] + j);
-                t3 = _mm256_mul_ps(t1, t3);
-                t2 = _mm256_sub_ps(t2, t3);
-                _mm256_storeu_ps(e[i] + j, t2);
-            }
-            for (j; j < N; j++)
-                e[i][j] = e[i][j] - e[i][k] * e[k][j];
+                A[k][j]=A[k][j]*1.0 / A[k][k];
 
-            e[i][k] = 0;
-        }
-    }
+            }
+            A[k][k] = 1.0;
+		}
+
+		//并行部分
+		#pragma omp for schedule(guided, 5)
+		for (int i = k + 1; i < n; i++)
+		{
+		    vaik=vmovq_n_f32(A[i][k]);
+            int j;
+			for (j = k + 1; j+4 <= n; j+=4)
+			{
+				vakj=vld1q_f32(&(A[k][j]));
+				vaij=vld1q_f32(&(A[i][j]));
+				vx=vmulq_f32(vakj,vaik);
+				vaij=vsubq_f32(vaij,vx);
+
+				vst1q_f32(&A[i][j], vaij);
+			}
+
+			for(; j<n; j++)
+            {
+                A[i][j] = A[i][j] - A[i][k] * A[k][j];
+            }
+
+			A[i][k] = 0;
+		}
+		// 离开for循环时，各个线程默认同步，进入下一行的处理
+	}
 }
+
+
+*/
+
+
+
 
 int main()
 {
-    for (int i = 0; i < N; i++)
-    {
-        for (int j = 0; j < N; j++)
-        {
-            elm[i][j] = (rand() % 100);
-        }
-    }
-    float** test = new float*[N];
-    for (int i = 0; i < N; i++)
-    {
-        test[i] = new float[N];
-    }
+	init();
+    double seconds ;
+    long long head,tail,freq,noww;
+    QueryPerformanceFrequency((LARGE_INTEGER *)&freq);
 
-    reset(test);
 
-     srand(time(NULL));
-    LARGE_INTEGER timeStart;	//开始时间
-    LARGE_INTEGER timeEnd;		//结束时间
 
-    LARGE_INTEGER frequency;	//计时器频率
-    QueryPerformanceFrequency(&frequency);
-    double quadpart = (double)frequency.QuadPart;//计时器频率
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_ordinary();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+    seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_ordinary: " << seconds << " ms" << endl;
 
-    //平凡算法
-    QueryPerformanceCounter(&timeStart);
-    simple(test);
-    QueryPerformanceCounter(&timeEnd);
-    double _Simple = (timeEnd.QuadPart - timeStart.QuadPart) / quadpart;
-    printf("Simple:%f\n", _Simple);
-    cout << endl;
-    reset(test);
 
-    //对齐的SSE算法
-    QueryPerformanceCounter(&timeStart);
-    sse_gausseliminate(test);
-    QueryPerformanceCounter(&timeEnd);
-    double _SSE_Gauss = (timeEnd.QuadPart - timeStart.QuadPart) / quadpart;
-    printf("SSE_Gauss:%f\n", _SSE_Gauss);
-    cout << endl;
-    reset(test);
 
-    //不对齐的SSE算法
-    QueryPerformanceCounter(&timeStart);
-    SIMD_notaligned_SSE_gausseliminate(test);
-    QueryPerformanceCounter(&timeEnd);
-    double notaligned_SSE_Gauss = (timeEnd.QuadPart - timeStart.QuadPart) / quadpart;
-    printf("notaligned_SSE_Gauss:%f\n",notaligned_SSE_Gauss);
-    cout << endl;
-    reset(test);
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_omp_static();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+	seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_omp_static: " << seconds << " ms" << endl;
 
-    //AVX算法
-    QueryPerformanceCounter(&timeStart);
-    avx_gauss(test);
-    QueryPerformanceCounter(&timeEnd);
-    double _AVX_Gauss = (timeEnd.QuadPart - timeStart.QuadPart) / quadpart;
-    printf("AVX_Gauss:%f\n", _AVX_Gauss);
-    cout << endl;
-    reset(test);
 
-    system("pause");
-    return 0;
+
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_omp_dynamic();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+	seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_omp_dynamic: " << seconds << " ms" << endl;
+
+
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_omp_guided();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+	seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_omp_guided: " << seconds << " ms" << endl;
+
+
+	/*
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_omp_static_neon();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+	seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_omp_static_neon: " << seconds << " ms" << endl;
+
+
+
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_omp_dynamic_neon();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+	seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_omp_dynamic_neon: " << seconds << " ms" << endl;
+
+
+	ReStart();
+	QueryPerformanceCounter((LARGE_INTEGER *)&head);//开始计时
+	f_omp_guided_neon();
+	QueryPerformanceCounter((LARGE_INTEGER *)&tail );//结束计时
+	seconds = (tail - head) * 1000.0 / freq ;//单位 ms
+	cout << "f_omp_guided_neon: " << seconds << " ms" << endl;
+*/
+
 }
+
+
+
+
